@@ -16,6 +16,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 /******************************************************************************
  * The program has a few sort of class definitions, which are the result of
@@ -45,6 +46,11 @@ __attribute__((__used__)) static const char version_str[]="$VER: fd2sfd " VERSIO
 
 #define REGS 16	 /* d0=0,...,a7=15 */
 #define FDS 1000
+
+
+#ifdef __MINGW32__
+#define bcopy(s1, s2, n) memmove((s2), (s1), (n))
+#endif
 
 typedef enum
 {
