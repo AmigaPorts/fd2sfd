@@ -2285,8 +2285,32 @@ main(int argc, char** argv)
 
    if (BaseName[0])
    {
+      /* The FD format carries no library name and the base variable is an
+	 unreliable source (_CyberGfxBase belongs to cybergraphics.library).
+	 Derive the name from the FD file name, which follows the
+	 <name>_lib.fd convention, and fall back to the base name. */
+      char libname[64];
+      const char* fdbase = strrchr(fdfilename, '/');
+      size_t len;
+
+      fdbase = fdbase ? fdbase+1 : fdfilename;
+      strncpy(libname, fdbase, sizeof libname - 1);
+      libname[sizeof libname - 1] = '\0';
+      if (strlen(libname) > 3 &&
+	  strcmp(libname+strlen(libname)-3, ".fd") == 0)
+	 libname[strlen(libname)-3] = '\0';
+      len = strlen(libname);
+      if (len > 4 && strcmp(libname+len-4, "_lib") == 0)
+	 libname[len-4] = '\0';
+      else if (len > 3 && (strcmp(libname+len-3, "_gc") == 0 ||
+			   strcmp(libname+len-3, "_ic") == 0 ||
+			   strcmp(libname+len-3, "_cl") == 0))
+	 libname[len-3] = '\0';
+      if (!libname[0])
+	 strcpy(libname, BaseNamL);
+
       fprintf(outfile, "==libname %s.%s\n",
-	      strcmp(BaseNamL, "cardres") == 0 ? "card" : BaseNamL, type);
+	      strcmp(libname, "cardres") == 0 ? "card" : libname, type);
    }
 
    clib = fopen( clibfilename, "r" );
