@@ -346,6 +346,8 @@ typedef struct
    long	         offset;      /* current fd offset (-bias)	  */
    Error         error;	      /* is everything o.k.		  */
    fdflags       flags;	      /* for ##private			  */
+   bool          c_comments;  /* strip C comments (clib files)	  */
+   bool          in_comment;  /* inside a C comment at line end	  */
 } fdFile;
 
 fdFile*
@@ -439,6 +441,39 @@ fF_ctor(const char* fname)
    return result;
 }
 
+/* Replace C comments in str with a space each. *in_comment carries the
+   state across lines, since comments can span several of them. */
+
+static void
+StripComments(char* str, bool* in_comment)
+{
+   const char *src=str;
+   char *dst=str;
+
+   while (*src)
+   {
+      if (*in_comment)
+      {
+	 if (src[0]=='*' && src[1]=='/')
+	 {
+	    *in_comment=false;
+	    *dst++=' ';
+	    src+=2;
+	 }
+	 else
+	    src++;
+      }
+      else if (src[0]=='/' && src[1]=='*')
+      {
+	 *in_comment=true;
+	 src+=2;
+      }
+      else
+	 *dst++=*src++;
+   }
+   *dst='\0';
+}
+
 Error
 fF_readln(fdFile* obj)
 {
@@ -460,6 +495,10 @@ fF_readln(fdFile* obj)
 	    obj->line[0]='\0';
 	    return real_error;
 	 }
+	 /* Otherwise the lines of a comment block, which don't end in ';'
+	    or ')', are joined to the prototype that follows it. */
+	 if (obj->c_comments)
+	    StripComments(low, &obj->in_comment);
 	 if (low==strpbrk(low, "*#/"))
 	 {
 	    DBP(fprintf(stderr, "in# %s\n", obj->line));
@@ -473,6 +512,8 @@ fF_readln(fdFile* obj)
 	    bpoint--;
 	    len--;
 	 }
+	 if (!len) /* nothing left; also don't look before the buffer */
+	    continue;
 	 if (*bpoint==';' || *bpoint==')')
 	 {
 	    DBP(fprintf(stderr, "\nin: %s\n", obj->line));
@@ -2167,6 +2208,7 @@ main(int argc, char** argv)
      rc = EXIT_FAILURE;
      goto quit;
    }
+   myfile->c_comments=true;
 
    if (!(tmpdef=fD_ctor()))
    {
