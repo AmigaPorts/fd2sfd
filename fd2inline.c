@@ -62,6 +62,8 @@ typedef unsigned char shortcard;
 typedef enum { falsy, nodef, real_error } Error;
 
 static int Quiet = 0;
+static int Strict = 0;		/* fail rather than guess types */
+static int StrictErrors = 0;
 
 static char BaseName[64], BaseNamU[64], BaseNamL[64], BaseNamC[64];
 static char Buffer[512];
@@ -1672,6 +1674,9 @@ fD_write(FILE* outfile, const fdDef* obj,int alias)
    shortcard count, numargs;
    const char *tagname, *varname, *name, *rettype;
    int /*vd=0,*/ a45=0, d7=0;
+   /* Private functions are left out of the headers made from the SFD
+      file, so guessed types only matter for public ones. */
+   int strict = Strict && !fD_GetPrivate(obj);
 
    DBP(fprintf(stderr, "func %s\n", fD_GetName(obj)));
 
@@ -1685,7 +1690,12 @@ fD_write(FILE* outfile, const fdDef* obj,int alias)
 
    if ((rettype=fD_GetType(obj))==fD_nostring)
    {
-      if (!Quiet && !fD_GetPrivate(obj))
+      if (strict)
+      {
+	 fprintf(stderr, "Error: %s has no prototype.\n", fD_GetName(obj));
+	 StrictErrors++;
+      }
+      else if (!Quiet && !fD_GetPrivate(obj))
 	 fprintf(stderr, "Warning: %s has no prototype.\n", fD_GetName(obj));
       rettype = "ULONG";
    }
@@ -1720,7 +1730,18 @@ fD_write(FILE* outfile, const fdDef* obj,int alias)
 
    if (fD_ProtoNum(obj)!=numargs)
    {
-      if (!Quiet)
+      if (strict)
+      {
+	 /* Already reported if there is no prototype at all */
+	 if (fD_GetType(obj)!=fD_nostring)
+	 {
+	    fprintf(stderr, "Error: %s gets %d fd args and %d proto%s.\n",
+		    name, numargs, fD_ProtoNum(obj),
+		    fD_ProtoNum(obj)!= 1 ? "s" : "");
+	    StrictErrors++;
+	 }
+      }
+      else if (!Quiet)
 	 fprintf(stderr, "%s gets %d fd args and %d proto%s.\n", name, numargs,
 		 fD_ProtoNum(obj), fD_ProtoNum(obj)!= 1 ? "s" : "");
       for (count=d0; count<numargs; count++)
@@ -1967,6 +1988,8 @@ printusage(const char* exename)
       "Options:\n"
 
       "--quiet\t\t\tDon't display warnings\n"
+      "--strict\t\tFail if a public function has no prototype or\n"
+      "\t\t\tits number of arguments differs from the FD file\n"
       "--version\t\tPrint version number and exit\n\n"
 	   , exename);
 }
@@ -2042,6 +2065,8 @@ main(int argc, char** argv)
 
 	    if (strcmp(option, "quiet") == 0)
 	       Quiet = 1;
+	    else if (strcmp(option, "strict") == 0)
+	       Strict = 1;
 	    else if (strcmp(option, "version")==0)
 	    {
 	       fprintf(stderr, "fd2sfd version " VERSION "\n");
@@ -2432,7 +2457,7 @@ main(int argc, char** argv)
 
    fprintf(outfile, "==end\n");
 
-   rc = EXIT_SUCCESS;
+   rc = StrictErrors ? EXIT_FAILURE : EXIT_SUCCESS;
   quit:
    for (count=0; count<FDS && arrdefs[count]; count++)
       fD_dtor(arrdefs[count]);
@@ -2446,6 +2471,9 @@ main(int argc, char** argv)
    if (closeoutfile)
    {
       fclose(outfile);
+      /* Don't leave an SFD file with guessed types for make to pick up */
+      if (StrictErrors)
+	 remove(outfilename);
    }
 
    return rc;
